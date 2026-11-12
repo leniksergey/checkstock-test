@@ -116,7 +116,7 @@ def get_stock(conn):
         CROSS JOIN locations l
         LEFT JOIN bal b ON b.product_id = p.id AND b.location_id = l.id
         LEFT JOIN res r ON r.product_id = p.id AND r.location_id = l.id
-        WHERE l.kind IN ('ff', 'transit_transfer', 'transit_fbo', 'transit_client')
+        WHERE l.kind IN ('ff', 'transit_transfer', 'transit_fbo', 'transit_client', 'marketplace')
         ORDER BY p.sku, l.id"""
     ).fetchall()
     products = {}
@@ -128,6 +128,7 @@ def get_stock(conn):
                 "name": r["product"],
                 "warehouses": [],
                 "in_transit": {"between_ff": 0, "to_marketplace_fbo": 0, "to_client_fbs": 0},
+                "at_marketplace": 0,
             },
         )
         if r["kind"] == "ff":
@@ -141,6 +142,8 @@ def get_stock(conn):
                     "available": r["qty"] - r["reserved"],
                 }
             )
+        elif r["kind"] == "marketplace":
+            item["at_marketplace"] = r["qty"]
         else:
             item["in_transit"][TRANSIT_KEYS[r["kind"]]] = r["qty"]
     return list(products.values())
