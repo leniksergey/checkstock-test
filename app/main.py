@@ -8,6 +8,7 @@ from .stock import get_stock, location_id_by_kind, on_hand
 from .transfers import router as transfers_router
 from .fbs import router as fbs_router
 from .fbo import router as fbo_router
+from .warehouses import router as warehouses_router
 
 
 @asynccontextmanager
@@ -21,6 +22,7 @@ app = FastAPI(title="CheckStock", lifespan=lifespan)
 app.include_router(transfers_router)
 app.include_router(fbs_router)
 app.include_router(fbo_router)
+app.include_router(warehouses_router)
 
 
 @app.get("/health")
