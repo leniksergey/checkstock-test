@@ -17,6 +17,20 @@
   .navbar-vertical .navbar-brand { margin-bottom: 1rem; }
   .navbar-vertical .nav-link { border-radius: var(--tblr-border-radius); }
   .badge.bg-success, .badge.bg-danger, .badge.bg-secondary { color: #fff; }
+
+  /* Компактная матрица остатков для многих складов */
+  #stockTable { min-width: max-content; }
+  #stockBody td, #stockBody th, #stockHead th {
+    white-space: nowrap;
+    vertical-align: top;
+    font-size: 13px;
+  }
+  #stockBody td small {
+    display: block;
+    font-size: 11px;
+    line-height: 1.2;
+  }
+  .table-responsive { overflow-x: auto; }
 </style>
 {% block extra_css %}{% endblock %}
 </head>

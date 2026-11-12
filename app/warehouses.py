@@ -100,6 +100,22 @@ def archive_warehouse(warehouse_id: int):
         return {"warehouse_id": warehouse_id, "archived": True}
 
 
+@router.post("/warehouses/{warehouse_id}/unarchive")
+def unarchive_warehouse(warehouse_id: int):
+    """Возвращает склад из архива."""
+    with connect() as conn:
+        wh = conn.execute(
+            "SELECT id, name, is_archived FROM locations WHERE id = %s AND kind = 'ff' FOR UPDATE",
+            (warehouse_id,),
+        ).fetchone()
+        if not wh:
+            raise HTTPException(404, "Склад не найден")
+        if not wh["is_archived"]:
+            return {"warehouse_id": wh["id"], "name": wh["name"], "archived": False, "replayed": True}
+        conn.execute("UPDATE locations SET is_archived = false WHERE id = %s", (warehouse_id,))
+        return {"warehouse_id": wh["id"], "name": wh["name"], "archived": False, "replayed": False}
+
+
 @router.get("/stock/{sku}/locations")
 def stock_locations(sku: str):
     with connect() as conn:

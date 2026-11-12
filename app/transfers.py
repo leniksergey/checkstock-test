@@ -152,12 +152,8 @@ def receive_transfer(transfer_id: int):
         if transfer["status"] != "sent":
             raise HTTPException(409, f"Недопустимый переход: статус «{transfer['status']}»")
         lock_product(conn, transfer["product_id"])
-        to_wh = conn.execute(
-            "SELECT id, is_archived FROM locations WHERE id = %s FOR SHARE",
-            (transfer["to_location_id"],),
-        ).fetchone()
-        if to_wh["is_archived"]:
-            raise HTTPException(409, "Склад-получатель в архиве, приёмка на него запрещена")
+        # Проверка is_archived убрана: принять уже отправленное на архивный склад
+        # можно — это завершение начатой операции, иначе товар «застрянет» в транзите.
         transit = location_id_by_kind(conn, "transit_transfer")
         conn.execute(
             """

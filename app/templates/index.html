@@ -11,16 +11,10 @@
     <div class="card-body">
       <div id="stockError" class="alert alert-danger error"></div>
       <div class="table-responsive">
-        <table class="table table-vcenter">
-          <thead>
-            <tr><th>Товар</th><th>Склад</th><th>На складе</th><th>Резерв</th><th>Доступно</th><th>Статус</th></tr>
-          </thead>
-          <tbody id="stockBody"><tr><td colspan="6" class="loading">Загрузка…</td></tr></tbody>
+        <table class="table table-vcenter" id="stockTable">
+          <thead id="stockHead"></thead>
+          <tbody id="stockBody"><tr><td class="loading">Загрузка…</td></tr></tbody>
         </table>
-      </div>
-      <div class="mt-3">
-        <h3 class="mb-2">В пути / у маркетплейса</h3>
-        <div id="stockTransit" class="transit"></div>
       </div>
     </div>
   </div>

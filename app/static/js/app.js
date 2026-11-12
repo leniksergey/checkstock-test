@@ -106,49 +106,76 @@ function fillWarehouseSelects() {
 // ---------- ОСТАТКИ ----------
 async function loadStock() {
   clearError('stockError');
+  const head = document.getElementById('stockHead');
   const body = document.getElementById('stockBody');
-  if (!body) return;
-  body.innerHTML = '<tr><td colspan="6" class="loading">Загрузка…</td></tr>';
+  if (!body || !head) return;
+  head.innerHTML = '';
+  body.innerHTML = '<tr><td class="loading">Загрузка…</td></tr>';
   try {
-    const data = await api('/stock');
+    const [data, warehouses] = await Promise.all([api('/stock'), api('/warehouses')]);
     allProducts = data;
+    allWarehouses = warehouses;
     fillProductSelects();
-    body.innerHTML = '';
-    const transitDiv = document.getElementById('stockTransit');
-    if (transitDiv) transitDiv.innerHTML = '';
+    fillWarehouseSelects();
+
+    const ff = warehouses;
+
+    head.innerHTML = '';
+    const hr = el('tr');
+    hr.appendChild(el('th', { text: 'Артикул' }));
+    hr.appendChild(el('th', { text: 'Товар' }));
+    for (const w of ff) {
+      hr.appendChild(el('th', {}, w.name,
+        w.archived ? el('span', { class: 'badge bg-secondary ms-1', text: 'архив' }) : null));
+    }
+    hr.appendChild(el('th', { text: 'В пути' }));
+    hr.appendChild(el('th', { text: 'У МП' }));
+    head.appendChild(hr);
 
     if (!data.length) {
-      body.innerHTML = '<tr><td colspan="6" class="loading">Нет товаров</td></tr>';
+      body.innerHTML = '<tr><td colspan="' + (ff.length + 4) + '" class="loading">Нет товаров</td></tr>';
       return;
     }
 
+    body.innerHTML = '';
     for (const p of data) {
-      for (const w of (p.warehouses || [])) {
-        const tr = el('tr', w.archived ? { class: 'archived-row' } : {});
-        tr.appendChild(el('td', {}, el('strong', { text: p.sku }), el('br'), el('small', { text: p.name || '' })));
-        tr.appendChild(el('td', {}, w.name,
-          w.archived ? el('span', { class: 'badge bg-secondary ms-2', text: 'архив' }) : null));
-        tr.appendChild(el('td', { text: String(w.on_hand ?? 0) }));
-        tr.appendChild(el('td', { text: String(w.reserved ?? 0) }));
-        tr.appendChild(el('td', {}, el('strong', { text: String(w.available ?? 0) })));
-        const av = w.available ?? 0;
-        tr.appendChild(el('td', {},
-          av > 0 ? el('span', { class: 'badge bg-success', text: 'В наличии' })
-          : av === 0 ? el('span', { class: 'badge bg-secondary', text: 'Нет в наличии' })
-          : el('span', { class: 'badge bg-danger', text: 'Недостаток' })));
-        body.appendChild(tr);
+      const tr = el('tr');
+      tr.appendChild(el('td', {}, el('strong', { text: p.sku })));
+      tr.appendChild(el('td', { text: p.name || '' }));
+
+      for (const w of ff) {
+        const wh = (p.warehouses || []).find(x => x.warehouse_id === w.warehouse_id);
+        if (!wh) {
+          tr.appendChild(el('td', { class: 'text-secondary', text: '—' }));
+          continue;
+        }
+        const onHand = wh.on_hand ?? 0;
+        const reserved = wh.reserved ?? 0;
+        const available = wh.available ?? 0;
+        const td = el('td', wh.archived ? { class: 'archived-row' } : {});
+        td.appendChild(el('div', { text: String(onHand) }));
+        if (reserved > 0) {
+          td.appendChild(el('small', { class: 'text-secondary', text: 'рез. ' + reserved }));
+          td.appendChild(el('div', {},
+            el('small', {
+              class: available > 0 ? 'text-success' : 'text-secondary',
+              text: 'дост. ' + available,
+            })));
+        }
+        tr.appendChild(td);
       }
+
       const t = p.in_transit || {};
-      const at = p.at_marketplace ?? 0;
       const parts = [];
-      if (t.between_ff) parts.push('Между ФФ: ' + t.between_ff);
-      if (t.to_marketplace_fbo) parts.push('К МП (FBO): ' + t.to_marketplace_fbo);
-      if (t.to_client_fbs) parts.push('К клиенту (FBS): ' + t.to_client_fbs);
-      if (at) parts.push('У МП: ' + at);
-      if (parts.length && transitDiv) {
-        transitDiv.appendChild(el('div', {},
-          el('strong', { text: p.sku + ' — ' + (p.name || '') + ': ' }), parts.join('; ')));
-      }
+      if (t.between_ff) parts.push('ФФ: ' + t.between_ff);
+      if (t.to_marketplace_fbo) parts.push('МП: ' + t.to_marketplace_fbo);
+      if (t.to_client_fbs) parts.push('Клиент: ' + t.to_client_fbs);
+      tr.appendChild(el('td', { class: 'small' }, parts.length ? parts.join(' · ') : '—'));
+
+      const at = p.at_marketplace ?? 0;
+      tr.appendChild(el('td', { text: at ? String(at) : '—' }));
+
+      body.appendChild(tr);
     }
   } catch (e) {
     body.innerHTML = '';
@@ -186,7 +213,9 @@ async function loadWarehouses() {
         btn.addEventListener('click', () => archiveWarehouse(w.warehouse_id ?? w.id));
         actions.appendChild(btn);
       } else {
-        actions.appendChild(document.createTextNode('—'));
+        const btn = el('button', { class: 'btn btn-outline-success btn-sm', text: 'Разархивировать' });
+        btn.addEventListener('click', () => unarchiveWarehouse(w.warehouse_id ?? w.id));
+        actions.appendChild(btn);
       }
       tr.appendChild(actions);
       body.appendChild(tr);
@@ -201,6 +230,15 @@ async function archiveWarehouse(id) {
   if (!confirm('Архивировать склад #' + id + '? Остатки и история сохранятся.')) return;
   try {
     await api('/warehouses/' + id, { method: 'DELETE' });
+    await loadWarehouses();
+    await loadStock();
+  } catch (e) { showError('warehousesError', e.message); }
+}
+
+async function unarchiveWarehouse(id) {
+  if (!confirm('Вернуть склад #' + id + ' из архива?')) return;
+  try {
+    await api('/warehouses/' + id + '/unarchive', { method: 'POST' });
     await loadWarehouses();
     await loadStock();
   } catch (e) { showError('warehousesError', e.message); }
@@ -268,6 +306,7 @@ bindForm('fboForm', 'fboError', async () => {
 bindForm('whForm', 'whError', async () => {
   await postJSON('/warehouses', { name: document.getElementById('whName').value });
   await loadWarehouses();
+  await loadStock();
 });
 
 bindForm('whPatchForm', 'whPatchError', async () => {
@@ -277,6 +316,7 @@ bindForm('whPatchForm', 'whPatchError', async () => {
     body: JSON.stringify({ name: document.getElementById('whPatchName').value }),
   });
   await loadWarehouses();
+  await loadStock();
 });
 
 // ---------- ОПЕРАЦИИ ----------
@@ -396,7 +436,7 @@ async function loadFbo() {
       tr.appendChild(el('td', { text: String(o.qty) }));
       tr.appendChild(el('td', { text: statusRu(o.status) }));
       const actions = el('td', { class: 'ops-actions' });
-                if (o.status === 'created') actions.appendChild(mkOpBtn('Отправить', () => sendFbo(o.id)));
+      if (o.status === 'created') actions.appendChild(mkOpBtn('Отправить', () => sendFbo(o.id)));
       if (o.status === 'sent')    actions.appendChild(mkOpBtn('Принять',   () => acceptFbo(o.id)));
       if (!actions.childNodes.length) actions.appendChild(document.createTextNode('—'));
       tr.appendChild(actions);

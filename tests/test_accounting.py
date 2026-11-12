@@ -1,5 +1,6 @@
-import pytest
 from concurrent.futures import ThreadPoolExecutor
+
+import pytest
 
 from app.db import connect as app_connect
 
@@ -41,14 +42,18 @@ def assert_invariant(conn):
             SELECT product_id, location_id, sum(qty) AS qty
             FROM reservations WHERE status = 'active' GROUP BY 1, 2
         )
-        SELECT l.id, coalesce(b.qty, 0) AS on_hand, coalesce(r.qty, 0) AS reserved
-        FROM locations l
-        LEFT JOIN bal b ON b.location_id = l.id
-        LEFT JOIN res r ON r.location_id = l.id
+        SELECT p.id AS product_id, l.id,
+               coalesce(b.qty, 0) AS on_hand, coalesce(r.qty, 0) AS reserved
+        FROM products p
+        CROSS JOIN locations l
+        LEFT JOIN bal b ON b.product_id = p.id AND b.location_id = l.id
+        LEFT JOIN res r ON r.product_id = p.id AND r.location_id = l.id
         WHERE l.kind = 'ff'
     """).fetchall()
     for r2 in rows2:
-        assert r2["on_hand"] >= r2["reserved"], f"Склад {r2['id']}: на складе < резерв"
+        assert r2["on_hand"] >= r2["reserved"], (
+            f"Товар {r2['product_id']}, склад {r2['id']}: на складе < резерв"
+        )
 
 
 def _on_hand(conn, product_id, location_id):
@@ -101,7 +106,8 @@ def test_transfer_send_receive(client):
         pid = _get_product_id(conn, "SKU-101")
         before_north = _on_hand(conn, pid, NORTH)
         before_south = _on_hand(conn, pid, SOUTH)
-    r = client.post("/transfers", json={"sku": "SKU-101", "from_warehouse_id": NORTH, "to_warehouse_id": SOUTH, "qty": 4})
+    r = client.post("/transfers",
+                    json={"sku": "SKU-101", "from_warehouse_id": NORTH, "to_warehouse_id": SOUTH, "qty": 4})
     assert r.status_code == 201, r.text
     tid = r.json()["id"]
     assert r.json()["status"] == "created"
@@ -156,20 +162,55 @@ def test_fbo_send_accept(client):
 
 
 def test_insufficient_stock_409(client):
-    """6. нехватка на одном ФФ при достаточном общем остатке → 409"""
-    client.post("/fbs/orders", json={"sku": "SKU-101", "warehouse_id": NORTH, "qty": 20})
-    with app_connect() as conn:
-        pid = _get_product_id(conn, "SKU-101")
-        free_before = _on_hand(conn, pid, NORTH)
-    r = client.post("/transfers", json={"sku": "SKU-101", "from_warehouse_id": NORTH, "to_warehouse_id": SOUTH, "qty": 999})
+    """6. Хватает на другом складе → 409 с подсказкой «хватает на Юг»."""
+    # Приход 20 на Юг → Юг 26, Север 10
+    client.post("/receipts", json={"sku": "SKU-101", "warehouse_id": SOUTH, "qty": 20})
+    # Резерв 15 на Севере: нужно 15, на Севере 10 → 409, на Юге 26 ≥ 15 → "Хватает на: Юг"
+    r = client.post("/fbs/orders", json={"sku": "SKU-101", "warehouse_id": NORTH, "qty": 15})
+    assert r.status_code == 409
+    detail = r.json()["detail"]
+    assert detail["error"] == "insufficient_stock"
+    assert detail["needed"] == 15
+    assert detail["available_here"] == 10
+    names = [w["name"] for w in detail["available_elsewhere"]]
+    assert "Юг" in names
+
+
+def test_insufficient_stock_hint_covering_warehouse(client):
+    """6a. подсказка предлагает склад, где товара хватает на всю операцию."""
+    r = client.post("/fbs/orders", json={"sku": "SKU-101", "warehouse_id": NORTH, "qty": 8})
     assert r.status_code == 201, r.text
-    tid = r.json()["id"]
-    r = client.post(f"/transfers/{tid}/send")
+    r = client.post("/fbs/orders", json={"sku": "SKU-101", "warehouse_id": NORTH, "qty": 5})
     assert r.status_code == 409, r.text
-    assert "insufficient_stock" in r.json()["detail"]["error"]
-    with app_connect() as conn:
-        assert _on_hand(conn, pid, NORTH) == free_before
-        assert_invariant(conn)
+    detail = r.json()["detail"]
+    assert detail["available_here"] == 2
+    assert "Хватает на: Юг." in detail["message"]
+    assert detail["available_elsewhere"] == [
+        {"warehouse_id": SOUTH, "name": "Юг", "available": 6}
+    ]
+
+
+def test_insufficient_stock_hint_total_only(client):
+    """6b. ни один склад не покрывает qty, но суммарно товара хватает."""
+    r = client.post("/fbs/orders", json={"sku": "SKU-101", "warehouse_id": NORTH, "qty": 8})
+    assert r.status_code == 201, r.text
+    r = client.post("/fbs/orders", json={"sku": "SKU-101", "warehouse_id": NORTH, "qty": 8})
+    assert r.status_code == 409, r.text
+    detail = r.json()["detail"]
+    assert detail["available_here"] == 2
+    assert "Хватает только суммарно: Север (2), Юг (6)." in detail["message"]
+    assert "Оформите перемещение с нескольких складов." in detail["message"]
+
+
+def test_insufficient_stock_hint_nowhere_enough(client):
+    """6c. товара не хватает даже суммарно."""
+    r = client.post("/fbs/orders", json={"sku": "SKU-101", "warehouse_id": NORTH, "qty": 8})
+    assert r.status_code == 201, r.text
+    r = client.post("/fbs/orders", json={"sku": "SKU-101", "warehouse_id": NORTH, "qty": 9})
+    assert r.status_code == 409, r.text
+    detail = r.json()["detail"]
+    assert detail["available_here"] == 2
+    assert detail["message"].endswith("Товара нет нигде в нужном количестве.")
 
 
 def test_archive_warehouse(client):
@@ -179,7 +220,8 @@ def test_archive_warehouse(client):
     assert r.json()["archived"] is True
     r = client.post("/receipts", json={"sku": "SKU-103", "warehouse_id": SOUTH, "qty": 1})
     assert r.status_code == 409, r.text
-    r = client.post("/transfers", json={"sku": "SKU-101", "from_warehouse_id": NORTH, "to_warehouse_id": SOUTH, "qty": 1})
+    r = client.post("/transfers",
+                    json={"sku": "SKU-101", "from_warehouse_id": NORTH, "to_warehouse_id": SOUTH, "qty": 1})
     assert r.status_code == 409, r.text
     with app_connect() as conn:
         assert_invariant(conn)
@@ -187,7 +229,8 @@ def test_archive_warehouse(client):
 
 def test_replayed_no_double(client):
     """8. повторные receive / ship / accept / cancel → replayed, без двойного списания"""
-    r = client.post("/transfers", json={"sku": "SKU-101", "from_warehouse_id": NORTH, "to_warehouse_id": SOUTH, "qty": 3})
+    r = client.post("/transfers",
+                    json={"sku": "SKU-101", "from_warehouse_id": NORTH, "to_warehouse_id": SOUTH, "qty": 3})
     assert r.status_code == 201
     tid = r.json()["id"]
     client.post(f"/transfers/{tid}/send")
@@ -216,7 +259,8 @@ def test_replayed_no_double(client):
 
 def test_parallel_receive(client):
     """9a. 8 потоков на один receive → ровно одно движение"""
-    r = client.post("/transfers", json={"sku": "SKU-101", "from_warehouse_id": NORTH, "to_warehouse_id": SOUTH, "qty": 5})
+    r = client.post("/transfers",
+                    json={"sku": "SKU-101", "from_warehouse_id": NORTH, "to_warehouse_id": SOUTH, "qty": 5})
     assert r.status_code == 201
     tid = r.json()["id"]
     client.post(f"/transfers/{tid}/send")
@@ -243,8 +287,10 @@ def test_parallel_transfer_full_stock(client):
     with app_connect() as conn:
         pid = _get_product_id(conn, "SKU-101")
         total = _on_hand(conn, pid, NORTH)
-    r1 = client.post("/transfers", json={"sku": "SKU-101", "from_warehouse_id": NORTH, "to_warehouse_id": SOUTH, "qty": total})
-    r2 = client.post("/transfers", json={"sku": "SKU-101", "from_warehouse_id": NORTH, "to_warehouse_id": SOUTH, "qty": total})
+    r1 = client.post("/transfers",
+                     json={"sku": "SKU-101", "from_warehouse_id": NORTH, "to_warehouse_id": SOUTH, "qty": total})
+    r2 = client.post("/transfers",
+                     json={"sku": "SKU-101", "from_warehouse_id": NORTH, "to_warehouse_id": SOUTH, "qty": total})
     assert r1.status_code == 201 and r2.status_code == 201
     s1 = client.post(f"/transfers/{r1.json()['id']}/send")
     s2 = client.post(f"/transfers/{r2.json()['id']}/send")

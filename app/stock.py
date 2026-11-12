@@ -84,11 +84,22 @@ def insufficient_stock(conn, product_id, location_id, location_name, qty, free):
         {"warehouse_id": r["warehouse_id"], "name": r["name"], "available": r["available"]}
         for r in rows if r["available"] > 0
     ]
-    if elsewhere:
-        names = ", ".join(r["name"] for r in rows if r["available"] > 0)
-        hint = f"Хватает на: {names}. Оформите перемещение с него."
+    covering = [r for r in elsewhere if r["available"] >= qty]
+    if covering:
+        names = ", ".join(r["name"] for r in covering)
+        pronoun = "него" if len(covering) == 1 else "них"
+        hint = f"Хватает на: {names}. Оформите перемещение с {pronoun}."
+    elif max(free, 0) + sum(r["available"] for r in elsewhere) >= qty:
+        breakdown = []
+        if free > 0:
+            breakdown.append(f"{location_name} ({free})")
+        breakdown.extend(f"{r['name']} ({r['available']})" for r in elsewhere)
+        hint = (
+            f"Хватает только суммарно: {', '.join(breakdown)}. "
+            "Оформите перемещение с нескольких складов."
+        )
     else:
-        hint = "Товара нет нигде."
+        hint = "Товара нет нигде в нужном количестве."
     raise HTTPException(
         409,
         {
