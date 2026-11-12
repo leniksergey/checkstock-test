@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{% block title %}CheckStock{% endblock %}</title>
+<link rel="stylesheet" href="/static/assets/tabler/css/tabler.min.css">
+<style>
+  .error { display: none; }
+  .error.visible { display: block; }
+  .archived-row { opacity: 0.55; }
+  .ops-actions { display: flex; gap: 6px; }
+  .ops-actions .btn { padding: 2px 8px; font-size: 12px; }
+  .loading { color: #656d76; font-style: italic; }
+  .transit { font-size: 13px; color: #656d76; }
+  .transit div { margin: 4px 0; }
+  .navbar-vertical .navbar-brand { margin-bottom: 1rem; }
+  .navbar-vertical .nav-link { border-radius: var(--tblr-border-radius); }
+  .badge.bg-success, .badge.bg-danger, .badge.bg-secondary { color: #fff; }
+</style>
+{% block extra_css %}{% endblock %}
+</head>
+<body class="layout-fluid" data-active-tab="{{ active_tab }}">
+{% set tab_titles = {'stock': 'Остатки', 'warehouses': 'Склады', 'history': 'История'} %}
+{% set tab_descriptions = {
+  'stock': 'Где сейчас товар, сколько доступно и что уже отправлено',
+  'warehouses': 'Склады фулфилмента, остатки и архивирование',
+  'history': 'Все движения товара по журналу операций'
+} %}
+
+<div class="page">
+  <aside class="navbar navbar-vertical navbar-expand-lg sidebar" data-bs-theme="dark">
+    <div class="container-fluid">
+      <h1 class="navbar-brand navbar-brand-autodark">
+        <a href="/" class="text-white text-decoration-none">CheckStock</a>
+      </h1>
+      <div class="navbar-nav flex-column pt-lg-3">
+        <a class="nav-link {% if active_tab == 'stock' %}active{% endif %}" href="/?tab=stock">
+          <span class="nav-link-icon d-md-none d-lg-inline-block">
+            <svg xmlns="http://www.w3.org/2000/svg" class="icon" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M12 3l8 4.5v9l-8 4.5l-8 -4.5v-9l8 -4.5" />
+              <path d="M12 12l8 -4.5" />
+              <path d="M12 12v9" />
+              <path d="M12 12l-8 -4.5" />
+            </svg>
+          </span>
+          <span class="nav-link-title">Остатки</span>
+        </a>
+        <a class="nav-link {% if active_tab == 'warehouses' %}active{% endif %}" href="/?tab=warehouses">
+          <span class="nav-link-icon d-md-none d-lg-inline-block">
+            <svg xmlns="http://www.w3.org/2000/svg" class="icon" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M3 21v-13l9 -6l9 6v13" />
+              <path d="M9 21v-6h6v6" />
+            </svg>
+          </span>
+          <span class="nav-link-title">Склады</span>
+        </a>
+        <a class="nav-link {% if active_tab == 'history' %}active{% endif %}" href="/?tab=history">
+          <span class="nav-link-icon d-md-none d-lg-inline-block">
+            <svg xmlns="http://www.w3.org/2000/svg" class="icon" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M12 8v4l3 3" />
+              <path d="M3.05 11a9 9 0 1 1 .5 4" />
+              <path d="M3 3v5h5" />
+            </svg>
+          </span>
+          <span class="nav-link-title">История</span>
+        </a>
+      </div>
+    </div>
+  </aside>
+
+  <div class="page-wrapper">
+    <header class="navbar navbar-expand-md d-print-none navbar-dark bg-dark" data-bs-theme="dark">
+      <div class="container-xl">
+        <div class="navbar-brand navbar-brand-autodark">Панель управления</div>
+        <div class="navbar-nav flex-row ms-auto align-items-center">
+          <span class="nav-item text-white-50 small">FastAPI + PostgreSQL</span>
+        </div>
+      </div>
+    </header>
+
+    <div class="page-body">
+      <div class="container-xl">
+        <div class="page-header d-print-none">
+          <div class="row align-items-center">
+            <div class="col">
+              <h2 class="page-title">{{ tab_titles[active_tab] }}</h2>
+              <div class="text-secondary mt-1">{{ tab_descriptions[active_tab] }}</div>
+            </div>
+          </div>
+        </div>
+        {% block content %}{% endblock %}
+      </div>
+    </div>
+  </div>
+</div>
+
+{% block extra_js %}{% endblock %}
+</body>
+</html>

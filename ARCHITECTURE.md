@@ -176,7 +176,7 @@ fbo:          created --send--> sent --accept--> accepted
 
 ```
 app/
-  main.py          # приложение, /health, /stock, /receipts, подключение роутеров
+  main.py          # приложение, подключение роутеров, Jinja-шаблоны и /static
   db.py            # connect(), init_db(), seed
   schema.sql       # таблицы
   stock.py         # расчёт остатков, lock_product, available, ответ о нехватке
@@ -185,7 +185,9 @@ app/
   fbo.py           # ⏳ отправка на склад МП
   warehouses.py    # ⏳ управление ФФ
   history.py       # ⏳ журнал
-  static/index.html  # ⏳ один экран без фреймворка
+  templates/       # base.html и index.html (Jinja2)
+  static/js/       # app.js, клиентская логика без фреймворка
+  static/assets/tabler/css/tabler.min.css  # единственный используемый CSS
 tests/             # ⏳ pytest
 docker-compose.yml, Dockerfile, requirements.txt, README.md, .gitignore
 ```
@@ -196,5 +198,5 @@ docker-compose.yml, Dockerfile, requirements.txt, README.md, .gitignore
 - **Журнал вместо чисел.** Нельзя «забыть обновить остаток», история бесплатна.
 - **Виртуальные места.** Любая единица товара всегда в ровно одном месте, проверка сходимости становится арифметикой.
 - **Мягкое удаление ФФ.** История и остатки не теряются.
-- **Один HTML без фреймворка.** Задание про учёт, а не про фронтенд; запуск не требует сборки.
+- **Jinja-шаблоны и один JS-файл без фреймворка.** Задание про учёт, а не про фронтенд; запуск не требует сборки.
 - **Сознательно не делаем:** доставку FBS клиенту (товар остаётся «в пути к клиенту»), возврат склада из архива, авторизацию, пагинацию, систему миграций (схема через `IF NOT EXISTS`), несколько магазинов (в задании один).

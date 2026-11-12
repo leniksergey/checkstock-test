@@ -1,4 +1,9 @@
-from fastapi import HTTPException
+from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel, Field
+
+from .db import connect
+
+router = APIRouter()
 
 TRANSIT_KEYS = {
     "transit_transfer": "between_ff",
@@ -147,3 +152,58 @@ def get_stock(conn):
         else:
             item["in_transit"][TRANSIT_KEYS[r["kind"]]] = r["qty"]
     return list(products.values())
+
+
+class ReceiptIn(BaseModel):
+    sku: str
+    warehouse_id: int
+    qty: int = Field(gt=0)
+
+
+@router.get("/stock")
+def api_get_stock():
+    """Список товаров с остатками по складам + в пути + у МП."""
+    with connect() as conn:
+        return get_stock(conn)
+
+
+@router.post("/receipts", status_code=201)
+def api_create_receipt(payload: ReceiptIn):
+    """Приход: EXTERNAL → ФФ."""
+    with connect() as conn:
+        # 1. найти товар
+        product = conn.execute(
+            "SELECT id FROM products WHERE sku = %s", (payload.sku,)
+        ).fetchone()
+        if not product:
+            raise HTTPException(404, {"error": "not_found", "message": f"Товар {payload.sku} не найден"})
+        product_id = product["id"]
+
+        # 2. найти склад + проверить архив
+        wh = conn.execute(
+            "SELECT id, name, is_archived FROM locations WHERE id = %s AND kind = 'ff'",
+            (payload.warehouse_id,),
+        ).fetchone()
+        if not wh:
+            raise HTTPException(404, {"error": "not_found", "message": f"Склад #{payload.warehouse_id} не найден"})
+        if wh["is_archived"]:
+            raise HTTPException(409, {"error": "warehouse_archived",
+                                      "message": f"Склад «{wh['name']}» в архиве, приход запрещён"})
+
+        # 3. блокировка товара
+        lock_product(conn, product_id)
+
+        # 4. движение EXTERNAL → склад
+        external_id = location_id_by_kind(conn, "external")
+        conn.execute(
+            """INSERT INTO movements (product_id, qty, from_location_id, to_location_id, op_type, op_id)
+               VALUES (%s, %s, %s, %s, 'receipt', NULL)""",
+            (product_id, payload.qty, external_id, payload.warehouse_id),
+        )
+
+        # 5. ответ
+        return {
+            "sku": payload.sku,
+            "warehouse_id": payload.warehouse_id,
+            "on_hand": on_hand(conn, product_id, payload.warehouse_id),
+        }

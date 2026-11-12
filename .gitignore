@@ -1,5 +1,32 @@
+# Python
 __pycache__/
+*.pyc
+*.pyo
+*.pyd
 .venv/
+venv/
+env/
 .pytest_cache/
-.env
+.coverage
+htmlcov/
+
+# IDE
 .idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker
+pgdata/
+
+# Базы и логи
+*.db
+*.sqlite
+*.log
+
+# Бэкапы
+*.bak
