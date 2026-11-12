@@ -23,6 +23,10 @@ Thumbs.db
 # Docker
 pgdata/
 
+# Cursor (личные настройки)
+.cursor/
+.cursorrules
+
 # Базы и логи
 *.db
 *.sqlite
@@ -30,3 +34,6 @@ pgdata/
 
 # Бэкапы
 *.bak
+
+# Временные файлы Opencode
+checkstock-*.png

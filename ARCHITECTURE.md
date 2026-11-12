@@ -134,6 +134,7 @@ fbo:          created --send--> sent --accept--> accepted
 - Архивирование отклоняется (409), если есть перемещения `sent` в этот склад: товару в пути некуда приехать.
 - Гонка «архивируем / одновременно кладём на склад» закрывается так: входящие операции читают `is_archived` под `FOR SHARE` строки склада, архивирование берёт `FOR UPDATE`.
 - Повторное удаление уже архивного склада возвращает 200 и `replayed: true`.
+- Возврат из архива: `POST /warehouses/{id}/unarchive`, идемпотентно; после разархивирования входящие операции снова разрешены.
 
 ## 11. Инвариант (главная проверка)
 
@@ -143,7 +144,7 @@ fbo:          created --send--> sent --accept--> accepted
 
 ## 12. API
 
-✅ сделано · ⏳ осталось. Ошибки: 404 (не найдено), 409 (конфликт состояния, нехватка, архив), 422 (неверный ввод, `qty ≤ 0`).
+Все перечисленные эндпоинты реализованы. Ошибки: 404 (не найдено), 409 (конфликт состояния, нехватка, архив), 422 (неверный ввод, `qty ≤ 0`).
 
 | | Метод и путь | Тело | Результат |
 |---|---|---|---|
@@ -154,21 +155,22 @@ fbo:          created --send--> sent --accept--> accepted
 | ✅ | `POST /transfers` | `{sku, from_warehouse_id, to_warehouse_id, qty}` | 201 перемещение в статусе `created` |
 | ✅ | `POST /transfers/{id}/send` | | перемещение, `replayed`; 409 нехватка |
 | ✅ | `POST /transfers/{id}/receive` | | перемещение, `replayed` |
-| ⏳ | `POST /fbs/orders` | `{sku, warehouse_id, qty}` | 201 резерв; 409 нехватка |
-| ⏳ | `GET /fbs/orders` | | список резервов |
-| ⏳ | `POST /fbs/orders/{id}/ship` | | резерв, `replayed` |
-| ⏳ | `POST /fbs/orders/{id}/cancel` | | резерв, `replayed` |
-| ⏳ | `POST /fbo` | `{sku, warehouse_id, qty}` | 201 отправка `created` |
-| ⏳ | `GET /fbo` | | список |
-| ⏳ | `POST /fbo/{id}/send` | | `replayed`; 409 нехватка |
-| ⏳ | `POST /fbo/{id}/accept` | | `replayed` |
-| ⏳ | `GET /warehouses` | | ФФ с `archived` и суммарным остатком |
-| ⏳ | `POST /warehouses` | `{name}` | 201 |
-| ⏳ | `PATCH /warehouses/{id}` | `{name}` | переименование |
-| ⏳ | `DELETE /warehouses/{id}` | | архивирование (мягкое удаление) |
-| ⏳ | `GET /stock/{sku}/locations` | | где числится товар: все места с ненулевым количеством, включая архивные ФФ и «в пути» |
-| ⏳ | `GET /history` | `?sku=&warehouse_id=&limit=` | движения: время, товар, qty, откуда, куда, тип |
-| ⏳ | `GET /` | | HTML-экран |
+| ✅ | `POST /fbs/orders` | `{sku, warehouse_id, qty}` | 201 резерв; 409 нехватка |
+| ✅ | `GET /fbs/orders` | | список резервов |
+| ✅ | `POST /fbs/orders/{id}/ship` | | резерв, `replayed` |
+| ✅ | `POST /fbs/orders/{id}/cancel` | | резерв, `replayed` |
+| ✅ | `POST /fbo` | `{sku, warehouse_id, qty}` | 201 отправка `created` |
+| ✅ | `GET /fbo` | | список |
+| ✅ | `POST /fbo/{id}/send` | | `replayed`; 409 нехватка |
+| ✅ | `POST /fbo/{id}/accept` | | `replayed` |
+| ✅ | `GET /warehouses` | | ФФ с `archived` и суммарным остатком |
+| ✅ | `POST /warehouses` | `{name}` | 201 |
+| ✅ | `PATCH /warehouses/{id}` | `{name}` | переименование |
+| ✅ | `DELETE /warehouses/{id}` | | архивирование (мягкое удаление) |
+| ✅ | `POST /warehouses/{id}/unarchive` | | возврат ФФ из архива, `replayed` |
+| ✅ | `GET /stock/{sku}/locations` | | где числится товар: все места с ненулевым количеством, включая архивные ФФ и «в пути» |
+| ✅ | `GET /history` | `?sku=&warehouse_id=&limit=` | движения: время, товар, qty, откуда, куда, тип |
+| ✅ | `GET /` | | HTML-экран |
 
 Формат объекта операции: `{id, sku, qty, status, <склады: id и name>, replayed}`. Для перемещения поля `from_warehouse_id`, `from_warehouse`, `to_warehouse_id`, `to_warehouse`; для FBS и FBO `warehouse_id`, `warehouse`.
 
@@ -181,15 +183,15 @@ app/
   schema.sql       # таблицы
   stock.py         # расчёт остатков, lock_product, available, ответ о нехватке
   transfers.py     # перемещения между ФФ (роутер)
-  fbs.py           # ⏳ резерв, отправка, отмена
-  fbo.py           # ⏳ отправка на склад МП
-  warehouses.py    # ⏳ управление ФФ
-  history.py       # ⏳ журнал
+  fbs.py           # резерв, отправка, отмена
+  fbo.py           # отправка на склад МП
+  warehouses.py    # управление ФФ
+  history.py       # журнал
   templates/       # base.html и index.html (Jinja2)
   static/js/       # app.js, клиентская логика без фреймворка
   static/assets/tabler/css/tabler.min.css  # единственный используемый CSS
-tests/             # ⏳ pytest
-docker-compose.yml, Dockerfile, requirements.txt, README.md, .gitignore
+tests/             # pytest, изолированная БД, 13 сценариев
+docker-compose.yml, Dockerfile, requirements.txt, pytest.ini, README.md, .gitignore
 ```
 
 ## 14. Решения и компромиссы
@@ -199,4 +201,4 @@ docker-compose.yml, Dockerfile, requirements.txt, README.md, .gitignore
 - **Виртуальные места.** Любая единица товара всегда в ровно одном месте, проверка сходимости становится арифметикой.
 - **Мягкое удаление ФФ.** История и остатки не теряются.
 - **Jinja-шаблоны и один JS-файл без фреймворка.** Задание про учёт, а не про фронтенд; запуск не требует сборки.
-- **Сознательно не делаем:** доставку FBS клиенту (товар остаётся «в пути к клиенту»), возврат склада из архива, авторизацию, пагинацию, систему миграций (схема через `IF NOT EXISTS`), несколько магазинов (в задании один).
+- **Сознательно не делаем:** доставку FBS клиенту (товар остаётся «в пути к клиенту»), авторизацию, пагинацию, систему миграций (схема через `IF NOT EXISTS`), несколько магазинов (в задании один).
