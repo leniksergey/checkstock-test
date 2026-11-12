@@ -1,6 +1,7 @@
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 from .db import connect, init_db
@@ -9,6 +10,7 @@ from .transfers import router as transfers_router
 from .fbs import router as fbs_router
 from .fbo import router as fbo_router
 from .warehouses import router as warehouses_router
+from .history import router as history_router
 
 
 @asynccontextmanager
@@ -23,6 +25,12 @@ app.include_router(transfers_router)
 app.include_router(fbs_router)
 app.include_router(fbo_router)
 app.include_router(warehouses_router)
+app.include_router(history_router)
+
+
+@app.get("/")
+def index():
+    return FileResponse("app/static/index.html")
 
 
 @app.get("/health")
